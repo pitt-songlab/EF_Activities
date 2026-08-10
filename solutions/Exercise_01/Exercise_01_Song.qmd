@@ -1,0 +1,347 @@
+---
+title: "Exercise_01_Song"
+author: Yiluan Song
+format: html
+project:
+  execute-dir: project
+---
+
+## ★ Questions (1-3)
+
+1.  \[A\] **Evaluate the following:**
+
+      a.  ln(1)
+
+    ```{r}
+log(1)
+    ```
+
+      b.  ln(0)
+
+    ```{r}
+log(0)
+    ```
+
+      c.  ln(e)
+
+    ```{r}
+log(exp(1))
+    ```
+
+      d.  ln(-5)
+
+    ```{r}
+log(5)
+    ```
+
+      e.  -ln(5)
+
+    ```{r}
+-log(5)
+    ```
+
+      f.  ln(1/5)
+
+    ```{r}
+log(1 / 5)
+    ```
+
+      g.  How does R represent when the output of a function is not a number?
+
+    ```{r}
+log(-1)
+    ```
+
+2.  \[B\] **What is the difference between log and log10?** (Hint: use help!)
+
+```{r}
+?log
+```
+
+`log` computes logarithms, by default natural logarithms; `log10` computes common (i.e., base 10) logarithms.
+
+3.  \[A\] **Pythagorean theorem**
+
+  a.  Given a right triangle with sides `a` and `b`, write a few lines of code that will calculate the length of the hypotenuse. Make sure to use variables in this calculations, not hard-coded numbers.
+
+```{r}
+a <- 3
+b <- 4
+c <- sqrt(a^2 + b^2)
+c
+```
+
+  b.  Try out your code with `a=5` and `b=13`.
+
+```{r}
+a <- 5
+b <- 13
+c <- sqrt(a^2 + b^2)
+c
+```
+
+## ★ Questions (4-5)
+
+4.  \[A\] **Generate a sequence of even numbers from -6 to 6**
+
+```{r}
+seq(-6, 6, by = 2)
+```
+
+5.  \[B\] **Generate a sequence of values from -4.8 to -3.43 that is length 8** (show code)
+
+```{r}
+seq(-4.8, -3.43, length.out = 8)
+```
+
+## ★ Questions (6)
+
+6.  \[A\] **Create a character vector that contains the names of 4 people you admire.**
+
+```{r}
+v_people <- c("A", "B", "C", "D")
+```
+
+## ★ Questions (7-8)
+
+7.  \[A\] Use R commands (e.g., do not click "import dataset" and use the dialog there) read in the file `met_hourly.csv` (which is in the `data` directory) and assign it the variable name `met`
+
+```{r}
+met <- read.csv(here::here("data", "met_hourly.csv"))
+```
+
+8.  \[A\] Save the matrix `x` to a csv file
+
+```{r}
+x <- matrix(1:25, nrow = 5, ncol = 5)
+write.csv(x, here::here("solutions", "Exercise_01", "Q8_Song.csv"))
+```
+
+## ★ Questions (9)
+
+9.  \[A\] Use the commands above to explore the contents of `met`. \[B\] Describe in words what this file contains and some of its characteristics.
+
+```{r}
+class(met)
+```
+This is a data frame.
+
+```{r}
+str(met)
+names(met)
+```
+```{r}
+dim(met)
+nrow(met)
+ncol(met)
+```
+
+```{r}
+head(met)
+tail(met)
+summary(met)
+```
+
+This data frame contains seven meteorological variables including short and long wave radiation, air temperature, relative humidity, wind speed, rainfall, and snow, from 2013-01-30 to 2014-01-01 at hourly resolution.
+
+## ★ Questions (10-12)
+
+10. [A] **Show the 1033rd through 1056th row of weather data**
+
+```{r}
+met[1033:1056, ]
+```
+
+11. [B] **Show the 3rd through 8th rows of the 1st though 3rd columns of the frog data**
+
+```{r}
+dat <- read.table(here::here("data", "Lab1_frogs.txt"), header = TRUE)
+dat[3:8, 1:3]
+```
+
+
+12. [A] **What was the _total_ amount of rain?** Hint: look back at Vector Math
+```{r}
+met$Rain |> sum()
+```
+
+## ★ Questions (13)
+
+13. [A] **Using the frog data, show just the spots column as characters**
+
+```{r}
+dat |>
+  dplyr::mutate(spots = as.character(spots)) |>
+  dplyr::select(spots)
+```
+
+## ★ Questions (14)
+14.	**Using the frog data set and either base or dplyr functions:** 
+   a.	[A] display just the rows where frogs have spots
+```{r}
+dat |> dplyr::filter(spots)
+```
+
+   b.	[B] display just the rows where frogs are blue
+```{r}
+dat |> dplyr::filter(color == "blue")
+```
+
+   c.	[A] create a new object containing just the rows where there are between 3 and 5 tadpoles
+```{r}
+dat |> dplyr::filter(tadpoles >= 3, tadpoles <= 5)
+```
+   
+   d.	[B] display just the rows where there are less than 2.5 red frogs
+```{r}
+dat |> dplyr::filter(color == "red", frogs < 2.5)
+```
+  
+   e.	[A] display where either frogs do not have spots or there are more than 5 frogs
+```{r}
+dat |> dplyr::filter(!spots | frogs > 5)
+```
+
+## ★ Questions (15)
+15. 
+  a. [A] **Use dplyr to calculate the daily mean air temperature**
+```{r}
+met |>
+  dplyr::mutate(date = lubridate::date(time)) |>
+  dplyr::group_by(date) |>
+  dplyr::summarize(AirTemp = mean(AirTemp), .groups = "drop")
+```
+  
+  b. [B] **Use apply to calculate the across-population standard deviations in the numbers of frogs and tadpoles**
+```{r}
+dat |>
+  dplyr::select(frogs, tadpoles) |>
+  apply(MARGIN = 2, FUN = sd)
+```
+
+## ★ Questions (16-18)
+16. [A] **Plot a histogram of blue frogs**
+```{r}
+library(ggplot2)
+dat |>
+  dplyr::filter(color == "blue") |>
+  ggplot() +
+  geom_histogram(aes(x = frogs), binwidth = 1) +
+  theme_classic()
+```
+
+17. [A] **Plot shortwave (solar) radiation against time**
+```{r}
+met |>
+  dplyr::mutate(time = lubridate::ymd_hms(time)) |>
+  ggplot() +
+  geom_line(aes(x = time, y = ShortWave)) +
+  scale_x_datetime() +
+  theme_classic()
+```
+
+18. [B] **Plot shortwave (solar) radiation against relative humidity**
+```{r}
+met |>
+  ggplot() +
+  geom_point(aes(x = ShortWave, y = RelHum)) +
+  theme_classic()
+```
+
+## ★ Questions (19-24)
+
+19. [A] **Histogram**
+* Select “met” as the data.frame
+* Click “validate imported data”
+* Drag AirTemp into the Y box (which will initially cause the tool to draw a histogram)
+* Click on “Labels and Title” to add axes labels, units, and title
+* Click on “Plot options” to change the color, theme, and number of bins
+* Click on “Data” and filter the dates down to just the summer (approximately)
+* Click on Export & code and hit “insert code into script” to add the code for this figure
+* When you do this you’ll see a lot of new syntax. First, the `%>%` is known as the _pipe operator_ and is used string together multiple functions. So here we see that we start with the met data, then we filter it based upon time, then we call ggplot(). After we call ggplot we see that the different parts of the figure are added together using a `+`. First, we use `aes` (aesthetic) to select the data being used. Then `geom_histogram` is called to plot a histogram, with additional arguments for the number of bins and the fill color (in this case specified using a hexadecimal color code). Next, we see axis labels being set using the `labs` command. Finally we see the theme that’s been applied.
+* Turn in the code for drawing your histogram
+```{r}
+met |>
+  ggplot() +
+  geom_histogram(aes(x = AirTemp)) +
+  theme_classic()
+```
+
+20. [B] **Density plot**
+* With the same data loaded up click on the “Histogram” icon in the top left you can see that you can also change the type of plot drawn. Click “density” to see how the plot changes and how the underlying code changes.
+* Play with the options to get a plot you like
+* Using Export, turn in the code for drawing your density plot 
+```{r}
+met |>
+  ggplot() +
+  geom_density(aes(x = AirTemp)) +
+  theme_classic()
+```
+
+21. [A] **Line plot**
+* Returning to the ggplot builder, next drag “time” into the X box, which should turn the plot into a time series line plot.
+* As before you can play with label, plot options, data filtering, etc
+* Export this code to your Rmd as well and briefly explain (in text) what has changed in your code from the histogram plot
+```{r}
+met |>
+  dplyr::mutate(time = lubridate::ymd_hms(time)) |>
+  ggplot() +
+  geom_line(aes(x = time, y = AirTemp)) +
+  scale_x_datetime() +
+  theme_classic()
+```
+
+22. [B] **Colored line plot**
+* Drag the “shortwave” data into the “Color” box. This should now cause the color of the line to change as a function of the incoming solar radiation
+* After playing with options, export this code as well
+* Describe the impact that Shortwave radiation has on air temperature. Note both the diurnal (daily) cycle (How does temperature change as shortwave increases and deceases throughout the day? When is temperature at its max and min?) and across days (How does shortwave radiation impact the amplitude of the diurnal cycle?). Note: to be able to see diurnal cycles clearly you’ll need to have zoomed in to a few months or smaller, not the whole time series.
+```{r}
+met |>
+  dplyr::mutate(time = lubridate::ymd_hms(time)) |>
+  ggplot() +
+  geom_line(aes(x = time, y = AirTemp, col = ShortWave)) +
+  scale_color_viridis_c() +
+  scale_x_datetime() +
+  theme_classic()
+```
+
+23. [A] **Scatterplot**
+* At the top left click on “Data” and change to the frog data “dat”
+* Plot tadpoles vs frogs and then drag the color variable to the Color box and the spots variable to the Size box
+* Set labels, select plot options that provide a good color scheme, theme, etc
+* Export the code and describe the new functions and arguments being used.
+```{r}
+dat |>
+  ggplot() +
+  geom_point(aes(x = frogs, y = tadpoles, col = color, size = spots)) +
+  scale_color_manual(values = c("red" = "red", "blue" = "blue")) +
+  theme_classic()
+```
+
+
+24. [B] **Facet and group plots**
+* Drag spots from Size to Facet. This will cause ggplot to now draw separate plots for the spots=TRUE data and the spots=FALSE data. Export this plot code.
+* Similarly, if you change the plot to type ‘line’ in the top left and then drag spots from “Facet” to “Group” it will now draw separate lines for each case of spots. This feature can be particularly handy when you have data from many different discrete classes (states, plots, year, etc).
+
+```{r}
+dat |>
+  ggplot() +
+  geom_point(aes(x = frogs, y = tadpoles, col = color)) +
+  scale_color_manual(values = c("red" = "red", "blue" = "blue")) +
+  theme_classic() +
+  facet_wrap(. ~ spots)
+```
+
+## ★ Questions (25)
+25. [B] **Modify the logistic growth code to simulate discrete-time exponential growth and plot the output.**
+```{r}
+NT <- 100 ## number of time steps
+N0 <- 1 ## initial population size
+r <- 0.2 ## population growth rate
+K <- 10 ## carrying capacity
+N <- rep(N0, NT)
+for (t in 2:NT) {
+  N[t] <- N[t - 1] + r * N[t - 1] ## discrete exponential growth
+}
+plot(N)
+```
