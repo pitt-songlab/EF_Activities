@@ -1,0 +1,234 @@
+---
+title: "Exercise_02_Song"
+author: Yiluan Song
+format: html
+project:
+  execute-dir: project
+---
+
+```{r setup}
+library(tidyverse)
+```
+
+1. [A] Generate plots of the logistic growth model at r = 1.95, 2.05, 2.5, and 2.8 Describe the trajectory observed in each case.
+
+```{r}
+simulate_logistic <- function(r = 1, K = 10, n0 = .1, NT = 30) {
+  n <- rep(n0, NT) ## vector to store results
+  for (t in 2:NT) {
+    n[t] <- n[t - 1] + r * n[t - 1] * (1 - n[t - 1] / K)
+  }
+  df <- data.frame(time = 1:NT, n = n)
+
+  return(df)
+}
+
+c(1, 1.95, 2.05, 2.5, 2.8) |>
+  map_dfr(\(r) simulate_logistic(r = r) |> mutate(r = r)) |>
+  ggplot() +
+  geom_line(aes(x = time, y = n, col = as.factor(r), group = r)) +
+  scale_color_viridis_d() +
+  labs(x = "Time", y = "Population size") +
+  theme_classic()
+```
+
+2. [A] Choose another probability distribution from the table above and generate graphs of the probability density function, the cumulative distribution function, the quantile function, and a histogram of samples from that distribution.
+
+```{r}
+data.frame(x = seq(0, 1, by = 0.01)) |>
+  mutate(
+    pdf1 = dbeta(x, 1, 1),
+    pdf2 = dbeta(x, 0.5, 0.5),
+    pdf3 = dbeta(x, 2, 2)
+  ) |>
+  pivot_longer(
+    cols = starts_with("pdf"),
+    names_to = "parameters",
+    names_prefix = "pdf"
+  ) |>
+  ggplot() +
+  geom_line(aes(x = x, y = value, col = parameters, group = parameters)) +
+  scale_color_manual(
+    breaks = 1:3,
+    values = c("darkblue", "darkorange", "darkgreen"), # mapped to 1, 2, 3 in order
+    labels = c("Beta(1,1)", "Beta(0.5,0.5)", "Beta(2,2)")
+  ) +
+  labs(x = "x", y = "Probability") +
+  theme_classic()
+```
+
+```{r}
+data.frame(x = seq(0, 1, by = 0.01)) |>
+  mutate(
+    cdf1 = pbeta(x, 1, 1),
+    cdf2 = pbeta(x, 0.5, 0.5),
+    cdf3 = pbeta(x, 2, 2)
+  ) |>
+  pivot_longer(
+    cols = starts_with("cdf"),
+    names_to = "parameters",
+    names_prefix = "cdf"
+  ) |>
+  ggplot() +
+  geom_line(aes(x = x, y = value, col = parameters, group = parameters)) +
+  scale_color_manual(
+    breaks = 1:3,
+    values = c("darkblue", "darkorange", "darkgreen"), # mapped to 1, 2, 3 in order
+    labels = c("Beta(1,1)", "Beta(0.5,0.5)", "Beta(2,2)")
+  ) +
+  labs(x = "x", y = "Cumulative probability") +
+  theme_classic()
+```
+
+```{r}
+data.frame(p = seq(0, 1, by = 0.01)) |>
+  mutate(
+    q1 = qbeta(p, 1, 1),
+    q2 = qbeta(p, 0.5, 0.5),
+    q3 = qbeta(p, 2, 2)
+  ) |>
+  pivot_longer(
+    cols = starts_with("q"),
+    names_to = "parameters",
+    names_prefix = "q"
+  ) |>
+  ggplot() +
+  geom_line(aes(x = p, y = value, col = parameters, group = parameters)) +
+  scale_color_manual(
+    breaks = 1:3,
+    values = c("darkblue", "darkorange", "darkgreen"), # mapped to 1, 2, 3 in order
+    labels = c("Beta(1,1)", "Beta(0.5,0.5)", "Beta(2,2)")
+  ) +
+  labs(x = "Cumulative probability", y = "Quantile") +
+  theme_classic()
+```
+
+```{r}
+data.frame(
+  sample1 = rbeta(1000, 1, 1),
+  sample2 = rbeta(1000, 0.5, 0.5),
+  sample3 = rbeta(1000, 2, 2)
+) |>
+  pivot_longer(
+    cols = starts_with("sample"),
+    names_to = "parameters",
+    names_prefix = "sample"
+  ) |>
+  ggplot() +
+  geom_histogram(aes(x = value, fill = parameters), position = "identity", alpha = 0.3, color = NA) +
+  scale_fill_manual(
+    breaks = 1:3,
+    values = c("darkblue", "darkorange", "darkgreen"), # mapped to 1, 2, 3 in order
+    labels = c("Beta(1,1)", "Beta(0.5,0.5)", "Beta(2,2)")
+  ) +
+  labs(x = "x", y = "Density") +
+  theme_classic()
+```
+
+3. [B] Plot histograms of the samples of r and K used for the simulation.
+```{r}
+NE <- 1000 ## Ensemble size
+r <- 1.0
+r.sd <- 0.2 ## standard deviation on r
+K <- 10
+K.sd <- 1.0 ## standard deviation on K
+
+df_param <- data.frame(
+  i = 1:NE,
+  r = rnorm(NE, r, r.sd),
+  K = rnorm(NE, K, K.sd)
+)
+
+df_param |>
+  pivot_longer(cols = r:K) |>
+  ggplot() +
+  geom_histogram(aes(x = value)) +
+  facet_wrap(. ~ name, scales = "free") +
+  theme_classic()
+```
+
+4. [A] Plot a sample of 10 different trajectories (through time) from your ensemble (on one graph).
+```{r}
+df_sample <- df_param |>
+  pmap_dfr(\(i, r, K) simulate_logistic(r = r, K = K) |> mutate(i = i, r = r, K = K))
+
+df_sample |>
+  filter(i %in% (df_sample$i |> sample(10))) |>
+  ggplot() +
+  geom_line(aes(x = time, y = n, group = i)) +
+  theme_classic()
+```
+
+5. [B] Plot a histogram of your population forecast at time = 15.
+```{r}
+df_sample |>
+  filter(time == 15) |>
+  ggplot() +
+  geom_histogram(aes(x = n)) +
+  theme_classic()
+```
+
+6. [A] Plot the median trajectory through time. Use `ciEnvelope` to add a 95% CI (i.e. 2.5% to 97.5%) to the plot. This function need to take time-series for both the upper (yhi) and lower (ylo) intervals.
+```{r}
+df_sample |>
+  group_by(time) |>
+  summarise(
+    median = median(n),
+    lower = quantile(n, 0.025),
+    upper = quantile(n, 0.975),
+    .groups = "drop"
+  ) |>
+  ggplot() +
+  geom_ribbon(aes(x = time, ymin = lower, ymax = upper), alpha = 0.2) +
+  geom_line(aes(x = time, y = median)) +
+  theme_classic()
+```
+
+7. [B] Modify the previous Monte Carlo code for logistic growth, setting the parameters back to their defaults (r=1, K=10) but using the sample of initial conditions to propagate initial condition uncertainty. Plot the median & 95% interval.
+```{r}
+NE <- 1000 ## Ensemble size
+n0 <- .1
+n0.sd <- .6
+
+data.frame(
+  i = 1:NE,
+  n0 = rlnorm(NE, log(n0), n0.sd)
+) |>
+  pmap_dfr(\(i, n0) simulate_logistic(n0 = n0) |> mutate(i = i, n0 = n0)) |>
+  group_by(time) |>
+  summarise(
+    median = median(n),
+    lower = quantile(n, 0.025),
+    upper = quantile(n, 0.975),
+    .groups = "drop"
+  ) |>
+  ggplot() +
+  geom_ribbon(aes(x = time, ymin = lower, ymax = upper), alpha = 0.2) +
+  geom_line(aes(x = time, y = median)) +
+  theme_classic()
+```
+
+8. [C] Repeat with r equal to 1.95, 2.05, and 2.8. Compare these simulations to those done in Question 1.
+```{r}
+crossing(
+  r = c(1, 1.95, 2.05, 2.5, 2.8),
+  data.frame(
+    i = 1:NE,
+    n0 = rlnorm(NE, log(n0), n0.sd)
+  )
+) |>
+  pmap_dfr(\(i, r, n0) simulate_logistic(r = r, n0 = n0) |> mutate(i = i, r = r, n0 = n0)) |>
+  group_by(r, time) |>
+  summarise(
+    median = median(n),
+    lower = quantile(n, 0.025),
+    upper = quantile(n, 0.975),
+    .groups = "drop"
+  ) |>
+  ggplot() +
+  geom_ribbon(aes(x = time, ymin = lower, ymax = upper, group = r, fill = as.factor(r)), alpha = 0.2) +
+  geom_line(aes(x = time, y = median, group = r, col = as.factor(r))) +
+  scale_fill_viridis_d() +
+  scale_color_viridis_d() +
+  theme_classic()
+```
