@@ -264,6 +264,6 @@ crossing(
   geom_hline(aes(yintercept = 0), alpha = 0.2) +
   geom_line(aes(x = time, y = lyapunov, group = r, color = as.factor(r))) +
   scale_color_viridis_d() +
-  labs(x = "Time", y = "Lyapunov exponent") +
+  labs(x = "Time", y = "Lyapunov exponent", color = "r") +
   theme_classic()
 ```
