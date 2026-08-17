@@ -28,7 +28,7 @@ c(1, 1.95, 2.05, 2.5, 2.8) |>
   ggplot() +
   geom_line(aes(x = time, y = n, col = as.factor(r), group = r)) +
   scale_color_viridis_d() +
-  labs(x = "Time", y = "Population size") +
+  labs(x = "Time", y = "Population size", color = "r") +
   theme_classic()
 ```
 
@@ -121,7 +121,6 @@ data.frame(
     values = c("darkblue", "darkorange", "darkgreen"), # mapped to 1, 2, 3 in order
     labels = c("Beta(1,1)", "Beta(0.5,0.5)", "Beta(2,2)")
   ) +
-  labs(x = "x", y = "Density") +
   theme_classic()
 ```
 
@@ -156,6 +155,7 @@ df_sample |>
   filter(i %in% (df_sample$i |> sample(10))) |>
   ggplot() +
   geom_line(aes(x = time, y = n, group = i)) +
+  labs(x = "Time", y = "Population size") +
   theme_classic()
 ```
 
@@ -165,6 +165,7 @@ df_sample |>
   filter(time == 15) |>
   ggplot() +
   geom_histogram(aes(x = n)) +
+  labs(x = "Population size") +
   theme_classic()
 ```
 
@@ -181,6 +182,7 @@ df_sample |>
   ggplot() +
   geom_ribbon(aes(x = time, ymin = lower, ymax = upper), alpha = 0.2) +
   geom_line(aes(x = time, y = median)) +
+  labs(x = "Time", y = "Population size") +
   theme_classic()
 ```
 
@@ -205,6 +207,7 @@ data.frame(
   ggplot() +
   geom_ribbon(aes(x = time, ymin = lower, ymax = upper), alpha = 0.2) +
   geom_line(aes(x = time, y = median)) +
+  labs(x = "Time", y = "Population size") +
   theme_classic()
 ```
 
@@ -230,5 +233,37 @@ crossing(
   geom_line(aes(x = time, y = median, group = r, col = as.factor(r))) +
   scale_fill_viridis_d() +
   scale_color_viridis_d() +
+  labs(x = "Time", y = "Population size", color = "r", fill = "r") +
+  theme_classic()
+```
+
+Extra exercise
+```{r}
+calc_lyapunov <- function(r = 1, K = 10, n0 = 0.1, NT = 30) {
+  # 1. Simulate trajectories
+  n <- rep(n0, NT)
+  for (t in 2:NT) {
+    n[t] <- n[t - 1] + r * n[t - 1] * (1 - n[t - 1] / K)
+  }
+
+  # Derivative: f'(n) = 1 + r - (2 * r * n / K)
+  deriv <- abs(1 + r - (2 * r * n / K))
+
+  # 3. Calculate Lyapunov exponent
+  data.frame(
+    time = 1:NT,
+    lyapunov = log(deriv)
+  )
+}
+
+crossing(
+  r = c(1, 1.95, 2.05, 2.5, 2.8)
+) |>
+  pmap_dfr(\(r) calc_lyapunov(r = r) |> mutate(r = r)) |>
+  ggplot() +
+  geom_hline(aes(yintercept = 0), alpha = 0.2) +
+  geom_line(aes(x = time, y = lyapunov, group = r, color = as.factor(r))) +
+  scale_color_viridis_d() +
+  labs(x = "Time", y = "Lyapunov exponent") +
   theme_classic()
 ```
