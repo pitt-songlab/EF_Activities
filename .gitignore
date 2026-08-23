@@ -1,3 +1,7 @@
+# Exercise-specific
+pheno.Rdata
+parquetTest/
+
 # Question-specific
 solutions/**
 !solutions/**/

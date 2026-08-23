@@ -1,0 +1,182 @@
+---
+title: "Exercise_03_Song"
+author: Yiluan Song
+format: html
+project:
+  execute-dir: project
+---
+
+```{r setup}
+library(tidyverse)
+```
+
+**Question 1: \[A\]**
+
+Make a simple time-series plot of the Harvard Forest (HARV) Phenocam phenology data (gcc_90), which EFI has preprocessed and saved here `url <- "https://sdsc.osn.xsede.org/bio230014-bucket01/challenges/targets/project_id=neon4cast/duration=P1D/phenology-targets.csv.gz"` as part of the NEON forecasting challenge. Don't forget to filter this data by site and variable!
+
+```{r}
+df_phenocam <- read_csv("https://sdsc.osn.xsede.org/bio230014-bucket01/challenges/targets/project_id=neon4cast/duration=P1D/phenology-targets.csv.gz") |>
+  filter(site_id == "HARV", variable == "gcc_90")
+
+df_phenocam |>
+  ggplot() +
+  geom_line(aes(x = datetime, y = observation)) +
+  theme_classic()
+```
+
+**Question 2: \[B\]** Within the object myCode, find all the lines that begin with the comment character, #.
+
+```{r}
+myCode <- readLines(here::here("Exercise_03_BigData.Rmd"))
+myCode[grep("^#", myCode)]
+```
+
+**Question 3: \[B\]** Plot EVI versus time and compare to the NEON phenocam observations.
+
+ORNL DAAC and hence MODISTools is not working at this time. Trying an alternative way.
+
+```{r}
+# install.packages("appeears")
+# library("appeears")
+# rs_set_key(user = "your_earthdata_username", password = "your_earthdata_password")
+
+rs_layers("MOD13Q1.061")
+
+df <- data.frame(
+  task = "harv_evi",
+  subtask = "HARV",
+  latitude = 42.5369,
+  longitude = -72.1727,
+  start = "2021-01-01",
+  end = "2021-12-31",
+  product = "MOD13Q1.061",
+  layer = "_250m_16_days_EVI" # confirm exact string from rs_layers() output
+)
+
+task <- rs_build_task(df = df)
+
+rs_request(
+  request = task,
+  user = "your_earthdata_username",
+  transfer = TRUE,
+  path = here::here("solutions", "Exercise_03"),
+  verbose = TRUE
+)
+
+df_modis <- read_csv(here::here("solutions", "Exercise_03", "harv_evi", "harv-evi-MOD13Q1-061-results.csv"))
+```
+
+```{r}
+df_modis |>
+  select(date = Date, value = MOD13Q1_061__250m_16_days_EVI) |>
+  ggplot(aes(x = date, y = value)) +
+  geom_line() +
+  theme_classic()
+
+full_join(
+  df_phenocam |> select(date = datetime, phenocam = observation),
+  df_modis |> select(date = Date, modis = MOD13Q1_061__250m_16_days_EVI)
+) |>
+  pivot_longer(cols = phenocam:modis, names_to = "dataset") |>
+  ggplot(aes(x = date, y = value)) +
+  geom_point(alpha = 0.5) +
+  geom_line() +
+  facet_wrap(. ~ dataset, ncol = 1) +
+  theme_classic()
+```
+
+**Question 4: \[A\]** Use arrow to access the NOAA GEFS weather forecast and filter this data to the forecast issued yesterday at midnight for the NEON site_id "HARV". The EFI NEON challenge stores this data at the endpoint "https://sdsc.osn.xsede.org" in a S3 bucket named "bio230014-bucket01/neon4cast-drivers/noaa/gefs-v12/stage2/reference_datetime={date}" were {date} is the forecast start date. Make a timeseries plot of the "air_temperature" data in this forecast that shows one curve for each ensemble member (there are 31 ensemble members total). Hint: make sure to filter all relevant variables before calling `collect`.
+
+```{r}
+bucket <- arrow::s3_bucket(
+  bucket = "bio230014-bucket01",
+  endpoint_override = "sdsc.osn.xsede.org",
+  anonymous = TRUE
+)
+available <- bucket$ls("neon4cast-drivers/noaa/gefs-v12/stage2")
+available |> tail()
+```
+
+```{r}
+s3 <- arrow::s3_bucket(
+  bucket = "bio230014-bucket01/neon4cast-drivers/noaa/gefs-v12/stage2/reference_datetime=2026-08-22",
+  endpoint_override = "sdsc.osn.xsede.org",
+  anonymous = TRUE
+)
+ds <- arrow::open_dataset(s3)
+ds
+ds |>
+  head() |>
+  collect()
+
+df <- ds |>
+  filter(
+    variable == "air_temperature",
+    site_id == "HARV"
+  ) |>
+  collect()
+
+df |>
+  ggplot(aes(x = datetime, y = prediction, col = as.factor(parameter), group = as.factor(parameter))) +
+  geom_line(alpha = 0.2) +
+  scale_color_viridis_d() +
+  theme_classic() +
+  guides(col = "none")
+```
+
+**Question 5 \[A\]** Based on the metadata above, what were the identities of the species_1 and species_2 columns in the forecast file, what units were used, and did this forecast propagate the initial condition uncertainty for these species? For full credit, include code that answers these questions rather than just looking for the answers in the output.
+
+```{r}
+## load example metadata from the EFI standard github repo
+md <- EML::read_eml("https://raw.githubusercontent.com/eco4cast/EFIstandards/master/inst/extdata/forecast-eml.xml")
+```
+
+Identities
+
+```{r}
+EML::get_attributes(md$dataset$dataTable$attributeList)$attributes |>
+  filter(str_detect(attributeName, "species_")) |>
+  pull(attributeDefinition)
+```
+
+Units
+
+```{r}
+EML::get_attributes(md$dataset$dataTable$attributeList)$attributes |>
+  filter(str_detect(attributeName, "species_")) |>
+  pull(unit) |>
+  unique()
+```
+
+Uncertainty from IC not propagated
+
+```{r}
+md$additionalMetadata$metadata$forecast$initial_conditions
+md$additionalMetadata$metadata$forecast$process_error$propagation
+```
+
+**Question #6: \[A\]**
+
+Imagine you are working with MODIS data, but are grabbing a large region (rather than a single pixel) and want to ensure that the data you are using is alwaysd up to date. However, the total size of the database is large and you don't want to completely delete and reinstall the database every day when only a small percentage of the data changes in any update.
+
+- Write out the pseudocode/outline for how to keep the files up to date
+- Write out what the cron table would look like to schedule this job (assume the update only needs to be done weekly)
+
+Outline
+```         
+- List all GeoTIFF files in the data storage path
+- Parse dates from existing filenames
+- If no files exist, set start_date = configured default
+  Else, start_date = max(existing dates)
+- Query the product's valid composite dates between start_date and today (inclusive)
+- For each valid date not already present locally:
+    - Download the data (do not overwrite existing files)
+    - Verify the download completed successfully (non-zero size, valid file)
+    - Log success/failure
+```
+
+Cron table
+```         
+MAILTO=yiluansong@pitt.edu
+0 */24 * * * ~/update_MODIS.sh
+```
