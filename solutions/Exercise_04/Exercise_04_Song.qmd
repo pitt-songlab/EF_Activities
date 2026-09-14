@@ -1,0 +1,62 @@
+---
+title: "Exercise_04_Song"
+author: Yiluan Song
+format: html
+project:
+  execute-dir: project
+---
+
+```{r setup}
+library(tidyverse)
+```
+
+## Task 1: Create & Clone Repository 
+
+I created a separate repo and added it here as a submodule.
+
+```
+git submodule add -f https://github.com/pitt-songlab/EF_Activities_Ex4.git solutions/Exercise_04/Exercise04Song
+```
+
+I also made this folder an R package.
+```{r, eval=FALSE}
+usethis::create_package("Exercise04Song/")
+```
+At this point, the working directory will automatically be changed to `Exercise04Song/`.
+
+## Task 2: Add the first function: download.phenocam
+
+I created a folder called `R` and added the R script there, aligning with the structure of an R package.
+
+I named the script as `01_download_phenocam.R`, avoiding `.` in file names. Similarly, I replaced `.` with `_` in function names.
+
+I also added `##' @export` to make sure that functions will be exported to the package.
+
+## Task 3: Collaborator adds plot.phenocam
+
+## Task 4: Owner adds pred.logistic and fit.logistic
+
+Now that all R scripts are in place, I used the `roxygen2` package to write documentation and used the `devtools` package to install the package.
+```{r, eval = FALSE}
+roxygen2::roxygenise()
+devtools::install()
+```
+
+## Task 5: Collaborator adds the master script
+If this is a close collaboration, I recommend using branches instead of forks. If we are on a fork and want to pull from the upstream repo, make sure we check the name of the main branch. It might not be `master` in the command below.
+```
+git pull URL master
+```
+
+I added the workflow in the `vignettes` folder, aligning with the structure of an R package. The vignette was started with the following.
+```{r, eval = FALSE}
+usethis::use_vignette("workflow")
+```
+
+The vignette could be rendered and viewed with the follwing.
+```{r, eval = FALSE}
+devtools::install(build_vignettes = TRUE)
+vignette(package = "Exercise04Song")
+vignette("workflow", package = "Exercise04Song")
+```
+

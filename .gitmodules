@@ -1,0 +1,6 @@
+[submodule "solutions/Exercise_04/Exercise04Song"]
+	path = solutions/Exercise_04/Exercise04Song
+	url = https://github.com/pitt-songlab/EF_Activities_Ex4.git
+[submodule "sol"]
+	path = sol
+	url = https://github.com/pitt-songlab/EF_Activities_Ex4.git
