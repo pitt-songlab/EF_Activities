@@ -4,3 +4,9 @@
 [submodule "sol"]
 	path = sol
 	url = https://github.com/pitt-songlab/EF_Activities_Ex4.git
+[submodule "solutions/Exercise_04/solutions/Exercise_04/Exercise04NEONSong"]
+	path = solutions/Exercise_04/solutions/Exercise_04/Exercise04NEONSong
+	url = https://github.com/pitt-songlab/EF_Activities_Ex4_NEON.git
+[submodule "solutions/Exercise_04/Exercise04NEONSong"]
+	path = solutions/Exercise_04/Exercise04NEONSong
+	url = https://github.com/pitt-songlab/EF_Activities_Ex4_NEON.git
