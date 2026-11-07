@@ -1,0 +1,521 @@
+---
+title: "Exercise_06_Song"
+author: Yiluan Song
+format: html
+---
+
+I am using the _nimble_ package instead of _jags_. _jags_ would be faster in this case.
+
+```{r}
+library(tidyverse)
+library(nimble)
+
+theme_set(ggthemes::theme_few())
+```
+
+```{r}
+gflu <- read.csv("data/gflu_data.txt", skip = 11)
+df <- data.frame(
+  time = as.Date(gflu$Date),
+  y = gflu$Massachusetts
+) |>
+  mutate(t = lubridate::interval(min(time), time) / lubridate::dweeks(1) + 1)
+```
+
+## Random walk
+
+$$Y_{t} \sim N(X_{t},\tau_{obs})$$
+$$X_{t+1} \sim N(X_{t},\tau_{add})$$
+```{r}
+model_rw <- nimbleCode({
+  #### Data Model
+  for (t in 1:n) {
+    y[t] ~ dnorm(x[t], tau_obs)
+  }
+
+  #### Process Model
+  for (t in 2:n) {
+    x[t] ~ dnorm(x[t - 1], tau_add)
+  }
+
+  #### Priors
+  x[1] ~ dnorm(x_ic, tau_ic)
+  tau_obs ~ dgamma(a_obs, r_obs)
+  tau_add ~ dgamma(a_add, r_add)
+})
+```
+
+```{r}
+forecast_rw <- function(
+  df, model, nchain = 3, niter = 10000, nburnin = 2000
+) {
+  set.seed(1)
+
+  data <- list(
+    y = log(df$y)
+  )
+
+  constants <- list(
+    n = nrow(df),
+    x_ic = log(1000), tau_ic = 100, ## initial condition prior
+    a_obs = 1, r_obs = 1, ## obs error prior
+    a_add = 1, r_add = 1 ## process error prior
+  )
+
+  ls_inits <- list()
+  for (i in 1:nchain) {
+    y.samp <- sample(df$y, nrow(df), replace = TRUE) |> na.omit()
+    ls_inits[[i]] <- list(
+      tau_add = 1 / var(diff(log(y.samp))), ## initial guess on process precision
+      tau_obs = 5 / var(log(y.samp)) ## initial guess on obs precision
+    )
+  }
+
+  Rmodel <- nimbleModel(
+    code = model,
+    constants = constants,
+    data = data
+  )
+
+  conf <- configureMCMC(Rmodel)
+  conf$addMonitors(c("x", "tau_obs", "tau_add"))
+
+  Rmcmc <- buildMCMC(conf)
+  Cmodel <- compileNimble(Rmodel)
+  Cmcmc <- compileNimble(Rmcmc, project = Rmodel)
+
+  samples <- runMCMC(Cmcmc,
+    niter = niter,
+    nburnin = nburnin,
+    nchains = nchain,
+    inits = ls_inits,
+    samplesAsCodaMCMC = TRUE
+  )
+
+  df_MCMC <- purrr::imap_dfr(samples, function(chain, ci) {
+    as.data.frame(chain) |>
+      mutate(n = row_number(), chain = factor(ci))
+  }) |>
+    pivot_longer(cols = -c(n, chain), names_to = "param", values_to = "value")
+
+  df_join <- df_MCMC |>
+    filter(str_detect(param, "x\\[")) |>
+    mutate(t = str_extract_all(param, "\\d+", simplify = T) |> as.integer()) |>
+    select(-param) |>
+    mutate(value = exp(value)) |>
+    group_by(t) |>
+    summarise(
+      median = median(value),
+      lower = quantile(value, 0.025),
+      upper = quantile(value, 0.975)
+    ) |>
+    ungroup() |>
+    full_join(df)
+
+  out <- list(df_MCMC = df_MCMC, df_pred = df_join)
+  return(out)
+}
+```
+
+```{r}
+out1 <- df |> forecast_rw(model = model_rw)
+
+out1$df_pred |>
+  ggplot() +
+  geom_ribbon(aes(x = time, ymin = lower, ymax = upper), fill = "lightblue") +
+  geom_line(aes(x = time, y = median)) +
+  geom_point(aes(x = time, y = y), col = "darkblue") +
+  scale_y_continuous(transform = "log", breaks = c(200, 500, 2000, 10000)) +
+  labs(x = "time", y = "Flu index")
+```
+
+Question 1 [A]:
+
+To explore the ability of state space models to generate forecasts (or in this case, a hindcast) make a copy of the data and **remove the last 40 observations (convert to NA)** and refit the model.
+
+* Generate a time-series plot for the CI of x that includes all the original observed data (as above but zoom the plot on the last ~80 observations). Use a different color and symbol to differentiate observations that were included in the model versus those that were converted to NA's.
+
+```{r}
+out2 <- df |>
+  mutate(y_full = y) |>
+  mutate(
+    y = if_else(t > max(t) - 40, NA, y_full),
+    y_miss = if_else(t > max(t) - 40, y_full, NA)
+  ) |>
+  select(t, time, y, y_miss) |>
+  forecast_rw(model = model_rw)
+
+out2$df_pred |>
+  filter(t > max(t) - 120) |>
+  ggplot() +
+  geom_ribbon(aes(x = time, ymin = lower, ymax = upper), fill = "lightblue") +
+  geom_line(aes(x = time, y = median)) +
+  geom_point(aes(x = time, y = y), pch = 19) +
+  geom_point(aes(x = time, y = y_miss), pch = 1) +
+  scale_y_continuous(transform = "log", breaks = c(200, 500, 2000, 10000)) +
+  labs(x = "time", y = "Flu index")
+```
+
+* Comment on how well the random walk model performed (both accuracy and precision) and how it might be modified to improve both these criteria.
+
+Low accuracy and low precision. The forecasts is a good benchmark but does not really provide much useful information.
+
+Add seasonal trends.
+
+
+Question 2 [C: Extra Credit]
+
+To look at how observation frequency affects data assimilation, convert 3 out of every 4 observations to NA (i.e. treat the data as approximately monthly) and refit the model. 
+
+* Generate a time-series plot for the CI of x that includes the observations (as above). Use a different color and symbol to differentiate observations that were included in the model versus those that were converted to NA's.
+
+* Compare the CI between the two runs.
+
+```{r}
+out3 <- df |>
+  mutate(y_full = y) |>
+  mutate(
+    y = if_else((t %% 4) != 0, NA, y_full),
+    y_miss = if_else((t %% 4) != 0, y_full, NA)
+  ) |>
+  select(t, time, y, y_miss) |>
+  forecast_rw(model = model_rw)
+
+out3$df_pred |>
+  ggplot() +
+  geom_ribbon(aes(x = time, ymin = lower, ymax = upper), fill = "lightblue") +
+  geom_line(aes(x = time, y = median)) +
+  geom_point(aes(x = time, y = y), pch = 19) +
+  geom_point(aes(x = time, y = y_miss), pch = 1) +
+  scale_y_continuous(transform = "log", breaks = c(200, 500, 2000, 10000)) +
+  labs(x = "time", y = "Flu index")
+```
+
+```{r}
+ci1 <- out1$df_pred |>
+  mutate(CI = upper - lower) |>
+  pull(CI) |>
+  mean()
+
+ci3 <- out3$df_pred |>
+  mutate(CI = upper - lower) |>
+  pull(CI) |>
+  mean()
+
+print(paste("CI from random walk (full data):", ci1 |> signif(6)))
+print(paste("CI from random walk (reduced frequency):", ci3 |> signif(6)))
+```
+
+
+* Generate a predicted (median) vs observed plot for the data points that were removed
+
+```{r}
+out3$df_pred |>
+  ggplot(aes(x = median, y = y_miss)) +
+  geom_point() +
+  labs(x = "predicted", y = "observed") +
+  geom_abline(intercept = 0, slope = 1, col = "red") +
+  scale_x_continuous(transform = "log", breaks = c(200, 500, 2000, 10000)) +
+  scale_y_continuous(transform = "log", breaks = c(200, 500, 2000, 10000))
+```
+
+* Comment on the accuracy and precision of the state estimates.
+
+Lower accuracy, lower precision at lower observation frequency.
+
+* How does the reduction in data volume affect the parameter estimates (taus)
+
+```{r}
+df_tau1 <- out1$df_MCMC |>
+  filter(str_detect(param, "tau")) |>
+  group_by(param) |>
+  summarise(
+    median = median(value),
+    lower = quantile(value, 0.025),
+    upper = quantile(value, 0.975)
+  ) |>
+  ungroup() |>
+  mutate(`model run` = "random walk (full data)")
+
+df_tau3 <- out3$df_MCMC |>
+  filter(str_detect(param, "tau")) |>
+  group_by(param) |>
+  summarise(
+    median = median(value),
+    lower = quantile(value, 0.025),
+    upper = quantile(value, 0.975)
+  ) |>
+  ungroup() |>
+  mutate(`model run` = "random walk (reduced frequency)")
+
+bind_rows(df_tau1, df_tau3) |>
+  select(`model run`, everything()) |>
+  arrange(param) |>
+  mutate(across(where(is.numeric), \(x) signif(x, 3))) |>
+  knitr::kable(
+    col.names = c("Model run", "Parameter", "Median", "2.5%", "97.5%"),
+    align     = "llrrr"
+  )
+```
+
+## Dynamic linear model
+
+I did not use `ecoforecastR::fit_dlm`. I still wrote the model and fit it with _nimble_.
+
+```{r}
+## grab weather data
+df_daymet <- daymetr::download_daymet(
+  site = "Boston",
+  lat = 42.36,
+  lon = -71.06,
+  start = 2003,
+  end = 2016,
+  internal = TRUE
+)$data |>
+  mutate(time = paste(year, yday, sep = "-") |> as.Date("%Y-%j")) |>
+  select(time, Tmin = `tmin..deg.c.`) |>
+  mutate(Tmin = Tmin - mean(Tmin, na.rm = T))
+
+df2 <- df |>
+  left_join(df_daymet, by = "time")
+```
+
+$$X_{t+1} \sim N(X_t + \beta_0 + \beta_1 z_t + \beta_{X} X_{t}, \tau_{add})$$
+
+```{r}
+model_dlm <- nimbleCode({
+  #### Data Model
+  for (t in 1:n) {
+    y[t] ~ dnorm(x[t], tau_obs)
+  }
+
+  #### Process Model
+  for (t in 2:n) {
+    x[t] ~ dnorm(x[t - 1] + beta[1] + beta[2] * z[t] + beta[3] * x[t - 1], tau_add)
+  }
+
+  #### Priors
+  beta[1] ~ dnorm(mu_beta, tau = tau_beta)
+  beta[2] ~ dnorm(mu_beta, tau = tau_beta)
+  beta[3] ~ dnorm(mu_beta, tau = tau_beta)
+
+  x[1] ~ dnorm(x_ic, tau_ic)
+  tau_obs ~ dgamma(a_obs, r_obs)
+  tau_add ~ dgamma(a_add, r_add)
+})
+```
+
+```{r}
+forecast_dlm <- function(
+  df, model, nchain = 3, niter = 10000, nburnin = 2000
+) {
+  set.seed(1)
+
+  data <- list(
+    y = log(df$y),
+    z = df$Tmin
+  )
+
+  constants <- list(
+    n = nrow(df),
+    mu_beta = 0,
+    tau_beta = 1,
+    x_ic = log(1000), tau_ic = 100, ## initial condition prior
+    a_obs = 1, r_obs = 1, ## obs error prior
+    a_add = 1, r_add = 1 ## process error prior
+  )
+
+  ls_inits <- list()
+  for (i in 1:nchain) {
+    y.samp <- sample(df$y, nrow(df), replace = TRUE) |> na.omit()
+    ls_inits[[i]] <- list(
+      beta = rnorm(3, 0, 0.01),
+      x = rnorm(nrow(df), log(1000), 1),
+      tau_add = 1 / var(diff(log(y.samp))), ## initial guess on process precision
+      tau_obs = 5 / var(log(y.samp)) ## initial guess on obs precision
+    )
+  }
+
+  Rmodel <- nimbleModel(
+    code = model,
+    constants = constants,
+    data = data
+  )
+
+  conf <- configureMCMC(Rmodel)
+  conf$addMonitors(c("x", "beta", "tau_obs", "tau_add"))
+
+  Rmcmc <- buildMCMC(conf)
+  Cmodel <- compileNimble(Rmodel)
+  Cmcmc <- compileNimble(Rmcmc, project = Rmodel)
+
+  samples <- runMCMC(Cmcmc,
+    niter = niter,
+    nburnin = nburnin,
+    nchains = nchain,
+    inits = ls_inits,
+    samplesAsCodaMCMC = TRUE
+  )
+
+  df_MCMC <- purrr::imap_dfr(samples, function(chain, ci) {
+    as.data.frame(chain) |>
+      mutate(n = row_number(), chain = factor(ci))
+  }) |>
+    pivot_longer(cols = -c(n, chain), names_to = "param", values_to = "value")
+
+  df_join <- df_MCMC |>
+    filter(str_detect(param, "x\\[")) |>
+    mutate(t = str_extract_all(param, "\\d+", simplify = T) |> as.integer()) |>
+    select(-param) |>
+    mutate(value = exp(value)) |>
+    group_by(t) |>
+    summarise(
+      median = median(value),
+      lower = quantile(value, 0.025),
+      upper = quantile(value, 0.975)
+    ) |>
+    ungroup() |>
+    full_join(df)
+
+  out <- list(df_MCMC = df_MCMC, df_pred = df_join)
+  return(out)
+}
+```
+
+```{r}
+out4 <- df2 |> forecast_dlm(model = model_dlm)
+```
+```{r}
+out4$df_pred |>
+  ggplot() +
+  geom_ribbon(aes(x = time, ymin = lower, ymax = upper), fill = "lightblue") +
+  geom_line(aes(x = time, y = median)) +
+  geom_point(aes(x = time, y = y), pch = 19) +
+  scale_y_continuous(transform = "log", breaks = c(200, 500, 2000, 10000)) +
+  labs(x = "time", y = "Flu index")
+```
+
+Question 3 [A]:
+
+* Compare the process and observation error estimates and model CI between this fit and the original random walk model. How much has the residual variance been reduced by?
+
+```{r}
+df_tau4 <- out4$df_MCMC |>
+  filter(str_detect(param, "tau")) |>
+  group_by(param) |>
+  summarise(
+    median = median(value),
+    lower = quantile(value, 0.025),
+    upper = quantile(value, 0.975)
+  ) |>
+  ungroup() |>
+  mutate(`model run` = "dynamic linear model")
+
+bind_rows(df_tau1, df_tau4) |>
+  select(`model run`, everything()) |>
+  arrange(param) |>
+  mutate(across(where(is.numeric), \(x) signif(x, 3))) |>
+  knitr::kable(
+    col.names = c("Model run", "Parameter", "Median", "2.5%", "97.5%"),
+    align     = "llrrr"
+  )
+```
+
+```{r}
+ci4 <- out4$df_pred |>
+  mutate(CI = upper - lower) |>
+  pull(CI) |>
+  mean()
+
+print(paste("CI from random walk (full data):", ci1 |> signif(6)))
+print(paste("CI from dynamic linear model:", ci4 |> signif(6)))
+```
+
+* Explain and discuss the parameter estimates (betas) from the dynamic linear model (what do they mean both biologically and in terms of the predictability of the system) and their correlations
+
+```{r}
+out4$df_MCMC |>
+  filter(str_detect(param, "beta")) |>
+  group_by(param) |>
+  summarise(
+    median = median(value),
+    lower = quantile(value, 0.025),
+    upper = quantile(value, 0.975)
+  ) |>
+  ungroup() |>
+  mutate(across(where(is.numeric), \(x) signif(x, 3))) |>
+  knitr::kable(
+    col.names = c("Parameter", "Median", "2.5%", "97.5%"),
+    align     = "lrrr"
+  )
+```
+$\beta_0$, coded as `beta[1]`, is the mean change in X from the current time step to the next time step. $\beta_1$, coded as `beta[2]`, is the effect of current Tmin on change in X. $\beta_2$, coded as `beta[3]`, is the effect of current X on change in X. 
+
+```{r}
+out4$df_MCMC |>
+  filter(str_detect(param, "beta")) |>
+  pivot_wider(names_from = param, values_from = value) |>
+  select(-n, -chain) |>
+  as.matrix() |>
+  pairs()
+```
+
+* Because a state-space model returns X's that are close to the Y's, metrics such as R2 and RMSE aren't great metrics of model performance. Besides looking at the taus, how else could we judge which model is doing better (in a way that avoids/penalizes overfitting)?
+
+Continuous Ranked Probability Score (CRPS)
+
+Question 4 [B]:
+
+Repeat the process of forecasting the last 40 observations (convert to NA), this time using the DLM with temperature as a covariate
+
+```{r}
+out5 <- df2 |>
+  mutate(y_full = y) |>
+  mutate(
+    y = if_else(t > max(t) - 40, NA, y_full),
+    y_miss = if_else(t > max(t) - 40, y_full, NA)
+  ) |>
+  select(t, time, Tmin, y, y_miss) |>
+  forecast_dlm(model = model_dlm)
+
+out5$df_pred |>
+  ggplot() +
+  geom_ribbon(aes(x = time, ymin = lower, ymax = upper), fill = "lightblue") +
+  geom_line(aes(x = time, y = median)) +
+  geom_point(aes(x = time, y = y), pch = 19) +
+  geom_point(aes(x = time, y = y_miss), pch = 1) +
+  scale_y_continuous(transform = "log", breaks = c(200, 500, 2000, 10000)) +
+  labs(x = "time", y = "Flu index")
+```
+
+* Generate a time-series plot for the CI that includes the observations and both the random walk and DLM models (Hint, think about the order you plot in so you can see both models, also consider including transpancy [alpha] in the CI color)
+
+```{r}
+bind_rows(
+  out2$df_pred |>
+    mutate(run = "random walk"),
+  out5$df_pred |>
+    mutate(run = "dynamic linear model")
+) |>
+  filter(t > max(t) - 120) |>
+  ggplot() +
+  geom_ribbon(aes(x = time, ymin = lower, ymax = upper, col = run), fill = NA, linetype = "dashed") +
+  geom_line(aes(x = time, y = median, col = run)) +
+  geom_point(aes(x = time, y = y), pch = 19) +
+  geom_point(aes(x = time, y = y_miss), pch = 1) +
+  scale_y_continuous(transform = "log", breaks = c(200, 500, 2000, 10000)) +
+  labs(x = "time", y = "Flu index") +
+  theme(legend.position = "bottom")
+```
+
+* Comment on how well the DLM model performed (both accuracy and precision) relative to the random walk and the true observations. How could the model be further improved?
+
+DLM gets some temporal trends correctly but still underpredicts the variations. It's better than RW. However, DLM has the risk of overfitting and generating explosive dynamics.
+
+Seasonal trends or process-based model.
+
+## Logistic growth
+
+Note that the potential in the sign, if we want K to be positive.
+
+$$ N_{t+1} = N_t + rN_t \left( 1 - {{N_t}\over{K}} \right) = (1+r)N_t - {{r}\over{K}}N_t^2$$

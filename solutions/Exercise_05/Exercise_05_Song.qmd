@@ -16,7 +16,7 @@ theme_set(ggthemes::theme_few())
 ```{r}
 nchain <- 3
 niter <- 5000
-burnin <- 500
+nburnin <- 500
 ```
 
 
@@ -121,7 +121,7 @@ df_MCMC |>
 
 Discard 500 iterations as burn-in
 ```{r}
-samples_burn <- window(samples, start = burnin + 1)
+samples_burn <- window(samples, start = nburnin + 1)
 
 df_MCMC_burn <- purrr::imap_dfr(samples_burn, function(chain, ci) {
   as.data.frame(chain) |>
@@ -246,8 +246,7 @@ for (i in 1:nchain) {
 Rmodel <- nimbleModel(
   code = model,
   constants = constants,
-  data = data,
-  inits = ls_inits
+  data = data
 )
 
 conf <- configureMCMC(Rmodel)
@@ -261,6 +260,7 @@ samples <- runMCMC(Cmcmc,
   niter = niter,
   nburnin = 0,
   nchains = nchain,
+  inits = ls_inits,
   samplesAsCodaMCMC = TRUE
 )
 
@@ -273,7 +273,7 @@ df_MCMC <- purrr::imap_dfr(samples, function(chain, ci) {
 - Include relevant convergence diagnostics and plots. [A]
 
 ```{r}
-samples_burn <- window(samples, start = burnin + 1)
+samples_burn <- window(samples, start = nburnin + 1)
 
 df_MCMC_burn <- purrr::imap_dfr(samples_burn, function(chain, ci) {
   as.data.frame(chain) |>
