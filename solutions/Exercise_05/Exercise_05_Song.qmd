@@ -1,0 +1,321 @@
+---
+title: "Exercise_05_Song"
+author: Yiluan Song
+format: html
+---
+
+I am using the _nimble_ package instead of _jags_.
+
+```{r}
+library(tidyverse)
+library(nimble)
+
+theme_set(ggthemes::theme_few())
+```
+
+```{r}
+nchain <- 3
+niter <- 5000
+burnin <- 500
+```
+
+
+## Regression
+
+$$ y \sim N_n( Xb, S^{-1}) $$ 
+
+$$b_1, b_2 \sim N_p(b_0, s_b^{-1})$$
+
+$$S \sim Gamma(s_1,s_2)$$
+
+
+```{r}
+load(here::here("data/Ex05.Part1.RData"))
+df1 <- data.frame(
+  x1 = x1,
+  y = y
+)
+set.seed(1)
+```
+
+```{r}
+model <- nimbleCode({
+  b[1] ~ dnorm(b0, tau = sb)
+  b[2] ~ dnorm(b0, tau = sb) ## Normal prior on regression params
+
+  S ~ dgamma(s1, s2) ## prior precision
+
+  for (i in 1:n) {
+    mu[i] <- b[1] + b[2] * x[i] ## process model
+    y[i] ~ dnorm(mu[i], tau = S) ## data model
+  }
+})
+```
+
+```{r}
+data <- list(
+  x = df1$x1,
+  y = df1$y
+)
+
+constants <- list(
+  n = nrow(df1),
+  b0 = 0,
+  sb = 1 / 10000,
+  s1 = 0.1,
+  s2 = 0.1
+)
+
+ls_inits <- list()
+for (i in 1:nchain) {
+  ls_inits[[i]] <- list(b = rnorm(2, 0, 5), S = runif(1, 1 / 200, 1 / 20))
+}
+```
+
+```{r}
+Rmodel <- nimbleModel(
+  code = model,
+  constants = constants,
+  data = data,
+  inits = ls_inits
+)
+
+conf <- configureMCMC(Rmodel)
+conf$addMonitors(c("b", "S"))
+
+Rmcmc <- buildMCMC(conf)
+Cmodel <- compileNimble(Rmodel)
+Cmcmc <- compileNimble(Rmcmc, project = Rmodel)
+
+samples <- runMCMC(Cmcmc,
+  niter = niter,
+  nburnin = 0,
+  nchains = nchain,
+  samplesAsCodaMCMC = TRUE
+)
+
+df_MCMC <- purrr::imap_dfr(samples, function(chain, ci) {
+  as.data.frame(chain) |>
+    mutate(n = row_number(), chain = factor(ci))
+}) |>
+  pivot_longer(cols = -c(n, chain), names_to = "param", values_to = "value")
+```
+
+### Task 1 
+
+-   Evaluate the MCMC chain for convergence. Include relevant diagnostics and plots. Determine and remove burn-in [A]
+
+GBR statistic
+```{r}
+coda::gelman.diag(samples, autoburnin = F)$psrf
+```
+
+Traceplot
+```{r}
+df_MCMC |>
+  ggplot() +
+  geom_line(aes(x = n, y = value, color = chain), linewidth = 0.3) +
+  facet_wrap(. ~ param, scales = "free_y", ncol = 1) +
+  theme(legend.position = "bottom")
+```
+
+Discard 500 iterations as burn-in
+```{r}
+samples_burn <- window(samples, start = burnin + 1)
+
+df_MCMC_burn <- purrr::imap_dfr(samples_burn, function(chain, ci) {
+  as.data.frame(chain) |>
+    mutate(n = row_number(), chain = factor(ci))
+}) |>
+  pivot_longer(cols = -c(n, chain), names_to = "param", values_to = "value")
+
+coda::gelman.diag(samples_burn, autoburnin = F)$psrf
+
+df_MCMC_burn |>
+  ggplot() +
+  geom_line(aes(x = n, y = value, color = chain), linewidth = 0.3) +
+  facet_wrap(. ~ param, scales = "free_y", ncol = 1) +
+  theme(legend.position = "bottom")
+```
+
+-   Report parameter summary table and plot marginal distributions [A]
+
+```{r}
+df_MCMC_burn |>
+  group_by(param) |>
+  summarise(
+    median = median(value),
+    lower = quantile(value, 0.025),
+    upper = quantile(value, 0.975)
+  ) |>
+  ungroup() |>
+  mutate(across(where(is.numeric), \(x) signif(x, 3))) |>
+  knitr::kable(
+    col.names = c("Parameter", "Median", "2.5%", "97.5%"),
+    align     = "lrrr"
+  )
+```
+
+```{r}
+df_MCMC_burn |>
+  ggplot() +
+  geom_density(aes(x = value, color = chain)) +
+  facet_wrap(. ~ param, scales = "free") +
+  theme(legend.position = "bottom")
+```
+
+
+-   Describe and explain the parameter covariances that you observe in the pairs plot and parameter correlation matrix.[B]
+
+```{r}
+as.matrix(samples_burn) |> pairs()
+as.matrix(samples_burn) |> cor()
+```
+
+-   Compare the summary statistics for the Bayesian regression model to those from the classical regression: `summary(lm(y ~ x1))`. This should include a comparison of the means and uncertainties of **all 3 model parameters** [A]
+
+```{r}
+reg <- lm(y ~ x1, data = df1)
+
+summary(reg)$coefficients
+
+1 / summary(reg)$sigma^2
+```
+## Multiple regression
+
+
+$$ y \sim N_n( Xb, S^{-1}) $$ 
+
+$$b_1, b_2, b_3, b_4 \sim N_p(b_0, s_b^{-1})$$
+
+$$S \sim Gamma(s_1,s_2)$$
+
+
+```{r}
+load(here::here("data/Ex05.Part2.RData"))
+df2 <- data.frame(
+  x1 = x1,
+  x2 = x2,
+  y = y
+)
+set.seed(2)
+```
+
+### Task 2
+
+- Show the JAGS and R code used. [A]
+
+```{r}
+model <- nimbleCode({
+  b[1] ~ dnorm(b0, tau = sb)
+  b[2] ~ dnorm(b0, tau = sb)
+  b[3] ~ dnorm(b0, tau = sb)
+  b[4] ~ dnorm(b0, tau = sb)
+
+  S ~ dgamma(s1, s2) ## prior precision
+
+  for (i in 1:n) {
+    mu[i] <- b[1] + b[2] * x1[i] + b[3] * x2[i] + b[4] * x1[i] * x2[i] ## process model
+    y[i] ~ dnorm(mu[i], tau = S) ## data model
+  }
+})
+```
+
+```{r}
+data <- list(
+  x1 = df2$x1,
+  x2 = df2$x2,
+  y = df2$y
+)
+
+constants <- list(
+  n = nrow(df1),
+  b0 = 0,
+  sb = 1 / 10000,
+  s1 = 0.1,
+  s2 = 0.1
+)
+
+ls_inits <- list()
+for (i in 1:nchain) {
+  ls_inits[[i]] <- list(b = rnorm(4, 0, 5), S = runif(1, 1 / 200, 1 / 20))
+}
+```
+
+```{r}
+Rmodel <- nimbleModel(
+  code = model,
+  constants = constants,
+  data = data,
+  inits = ls_inits
+)
+
+conf <- configureMCMC(Rmodel)
+conf$addMonitors(c("b", "S"))
+
+Rmcmc <- buildMCMC(conf)
+Cmodel <- compileNimble(Rmodel)
+Cmcmc <- compileNimble(Rmcmc, project = Rmodel)
+
+samples <- runMCMC(Cmcmc,
+  niter = niter,
+  nburnin = 0,
+  nchains = nchain,
+  samplesAsCodaMCMC = TRUE
+)
+
+df_MCMC <- purrr::imap_dfr(samples, function(chain, ci) {
+  as.data.frame(chain) |>
+    mutate(n = row_number(), chain = factor(ci))
+}) |>
+  pivot_longer(cols = -c(n, chain), names_to = "param", values_to = "value")
+```
+- Include relevant convergence diagnostics and plots. [A]
+
+```{r}
+samples_burn <- window(samples, start = burnin + 1)
+
+df_MCMC_burn <- purrr::imap_dfr(samples_burn, function(chain, ci) {
+  as.data.frame(chain) |>
+    mutate(n = row_number(), chain = factor(ci))
+}) |>
+  pivot_longer(cols = -c(n, chain), names_to = "param", values_to = "value")
+
+coda::gelman.diag(samples_burn, autoburnin = F)$psrf
+
+df_MCMC_burn |>
+  ggplot() +
+  geom_line(aes(x = n, y = value, color = chain), linewidth = 0.3) +
+  facet_wrap(. ~ param, scales = "free_y", ncol = 1) +
+  theme(legend.position = "bottom")
+```
+
+- Report parameter summary table. [A]
+
+```{r}
+df_MCMC_burn |>
+  group_by(param) |>
+  summarise(
+    median = median(value),
+    lower = quantile(value, 0.025),
+    upper = quantile(value, 0.975)
+  ) |>
+  ungroup() |>
+  mutate(across(where(is.numeric), \(x) signif(x, 3))) |>
+  knitr::kable(
+    col.names = c("Parameter", "Median", "2.5%", "97.5%"),
+    align     = "lrrr"
+  )
+```
+
+- Plot marginal parameter distributions and pairwise parameter correlations (stats and scatter plots). [B]
+
+```{r}
+df_MCMC_burn |>
+  ggplot() +
+  geom_density(aes(x = value, color = chain)) +
+  facet_wrap(. ~ param, scales = "free") +
+  theme(legend.position = "bottom")
+
+as.matrix(samples_burn) |> pairs()
+```

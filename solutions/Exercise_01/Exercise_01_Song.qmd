@@ -2,8 +2,6 @@
 title: "Exercise_01_Song"
 author: Yiluan Song
 format: html
-project:
-  execute-dir: project
 ---
 
 ## ★ Questions (1-3)

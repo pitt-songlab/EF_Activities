@@ -2,8 +2,6 @@
 title: "Exercise_02_Song"
 author: Yiluan Song
 format: html
-project:
-  execute-dir: project
 ---
 
 ```{r setup}
